@@ -21,6 +21,11 @@ command -v jq >/dev/null || { echo "jq is required (brew install jq)" >&2; exit 
 
 shipped() { jq -e --arg k "$1" 'has($k)' "$INSTALLED" >/dev/null; }
 
+# Mods written by other people are listed in herdr/external-mods.txt and fetched at a pinned commit
+# (herdr/external-mods.sh), so they are never copied into this repo.
+EXTERNAL="$REPO/herdr/external-mods.txt"
+external() { [ -f "$EXTERNAL" ] && grep -vE '^[[:space:]]*(#|$)' "$EXTERNAL" | awk '{print $1}' | grep -qx "$1"; }
+
 copy_file() {   # copy_file <path relative to $SRC>
   mkdir -p "$DEST/$(dirname "$1")"
   cp -p "$SRC/$1" "$DEST/$1"
@@ -37,6 +42,7 @@ my_mods=()
 for d in "$APP"/mods/*/; do
   m=$(basename "$d")
   shipped "$m" && continue
+  if external "$m"; then echo "external $m (pinned in external-mods.txt, not copied)"; continue; fi
   my_mods+=("$m")
   mkdir -p "$DEST/herdr-app/mods/$m"
   rsync -a --delete --exclude gpui-kit.d.ts --exclude jsconfig.json --exclude '*.error' \

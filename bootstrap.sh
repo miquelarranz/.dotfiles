@@ -35,6 +35,9 @@ mkdir -p "$HOME/.config"
 rsync -a --ignore-existing "$REPO/herdr/.config/" "$HOME/.config/"
 echo "Copied herdr config (existing files kept)"
 
+# 3b. Mods other people wrote: fetched at the commit pinned in herdr/external-mods.txt
+"$REPO/herdr/external-mods.sh" install
+
 # 4. Untracked, per-machine files that .zshrc and .gitconfig expect
 [ -e "$HOME/.zshrc.work" ] || { printf '# Machine- or employer-specific shell config and secrets. Not in the repo.\n' > "$HOME/.zshrc.work"; chmod 600 "$HOME/.zshrc.work"; }
 if [ ! -e "$HOME/.gitconfig.local" ]; then

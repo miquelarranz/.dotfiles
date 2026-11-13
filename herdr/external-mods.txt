@@ -1,0 +1,5 @@
+# Herdr mods written by other people. Not copied into this repo: fetched at a pinned commit.
+#   ./herdr/external-mods.sh install   fetch every mod below at its pinned commit
+#   ./herdr/external-mods.sh update    move every pin to the remote's latest commit, then install
+# Format: <mod folder name>  <git url>  <commit sha>  <path of the mod folder inside that repo>
+github-prs  https://github.com/jeffarese/herdr-prs  98d8e3045e55b1f3da49de272f96d2af5639fc78  mods/github-prs

@@ -19,7 +19,7 @@ git clone git@github.com:miquelarranz/.dotfiles.git ~/dotfiles
 | `git` | stow symlinks | `.gitconfig` (identity comes from an untracked `~/.gitconfig.local`), global ignore |
 | `zsh` | stow symlinks | `.zshrc`, `.zprofile` (machine-specific and secret settings go in an untracked `~/.zshrc.work`) |
 | `ccstatusline` | stow symlinks | settings |
-| `herdr` | **copied, not linked** | config, theme, keys, layout, my mods (`prs`, `my-tabs`, `spaces-edited`, `newtab-root`) |
+| `herdr` | **copied, not linked** | config, theme, keys, layout, my mods (`my-tabs`, `spaces-edited`, `newtab-root`, `research-viewer`). Other people's mods are pinned, not copied (see below) |
 
 Stow runs with `--no-folding` so tools that write into `~/.claude` don't pollute this repo.
 
@@ -29,9 +29,13 @@ Herdr rewrites its own config files, so it is not symlinked. Save live changes i
 
 `docs/claude-settings.personal.json` is a snapshot of my `settings.json` with everything employer-specific removed (plugins, marketplaces, work MCP permissions, PR hooks, auto-mode environment). It is not symlinked, because `settings.json` mixes personal and work settings on my main machine. `bootstrap.sh` copies it to `~/.claude/settings.json` only if none exists. It can drift, so regenerate it after changing settings.
 
-## Herdr PR panel
+## Mods other people wrote
 
-The `prs` mod gives a popup (`mod.open:prs`, bound to `cmd-alt-p`). The sidebar tab only exists in `my-layout`, so to get it, use the layout too: `herdr-app do layout.switch '{"name":"my-layout"}'`.
+`herdr/external-mods.txt` lists them as `name  url  commit  path-in-repo`. They are not copied into this repo: `bootstrap.sh` runs `herdr/external-mods.sh install`, which fetches each one at its pinned commit into `~/.config/herdr-app/mods/`. `./herdr/external-mods.sh update` moves every pin to the remote's latest commit and installs it, so bumping a mod is a one-line diff to review. `sync-herdr.sh` skips anything listed there. Currently: `github-prs` from [jeffarese/herdr-prs](https://github.com/jeffarese/herdr-prs) (the Pull requests tab in the right panel).
+
+## Research panel
+
+The right panel has a "Research notes" tab (mod `research-viewer`, layout block `research`) that renders the vault notes written by the focused Claude session. It only appears for sessions that have notes. Notes are registered by Claude Code hooks in `claude/.claude/hooks/` (`PostToolUse` on Write/Edit under `~/Desktop/Vault/Research/`, plus `SessionStart`), keyed by Claude session id, in `~/.config/herdr-app/data/research-viewer/`. Those hooks are wired in `~/.claude/settings.json`, which is not tracked here, so add them by hand on a new machine. `backfill-research-sessions.py` registers notes from past session transcripts. The tab strip (`my-tabs`) carries its own copy of `registry.js` as `research-registry.js`, because mods cannot import across folders: keep them identical.
 
 ## Not tracked
 
