@@ -35,7 +35,7 @@ Herdr rewrites its own config files, so it is not symlinked. Save live changes i
 
 ## Research panel
 
-The right panel has a "Research notes" tab (mod `research-viewer`, layout block `research`) that renders the vault notes written by the focused Claude session. It only appears for sessions that have notes. Notes are registered by Claude Code hooks in `claude/.claude/hooks/` (`PostToolUse` on Write/Edit under `~/Desktop/Vault/Research/`, plus `SessionStart`), keyed by Claude session id, in `~/.config/herdr-app/data/research-viewer/`. Those hooks are wired in `~/.claude/settings.json`, which is not tracked here, so add them by hand on a new machine. `backfill-research-sessions.py` registers notes from past session transcripts. The tab strip (`my-tabs`) carries its own copy of `registry.js` as `research-registry.js`, because mods cannot import across folders: keep them identical.
+The right panel has a "Research notes" tab (mod `research-viewer`, layout block `research`). The tab is always in the header; it opens by itself only when the focused Claude session first writes a vault note or resumes with notes. It renders the focused session's latest note, and "all notes" shows the vault's `Research/` folders as a tree. Notes are registered by Claude Code hooks in `claude/.claude/hooks/` (`PostToolUse` on Write/Edit under `~/Desktop/Vault/Research/`, plus `SessionStart`), keyed by Claude session id, in `~/.config/herdr-app/data/research-viewer/`. Those hooks are wired in `~/.claude/settings.json`, which is not tracked here, so add them by hand on a new machine. `backfill-research-sessions.py` registers notes from past session transcripts.
 
 ## Not tracked
 
