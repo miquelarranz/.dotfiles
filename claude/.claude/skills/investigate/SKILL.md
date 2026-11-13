@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Run an investigation and store the findings as a categorised Markdown note in the Obsidian vault (~/Desktop/Vault/Research/<Area>/). Only runs when the user types /investigate <topic>.
+description: Run an investigation and store the findings as a categorised Markdown note in the Obsidian vault (~/Desktop/Vault/Research/<Area>/), optionally shaped like a Technical Design Doc (`/investigate tdd <topic>`). Only runs when the user types /investigate.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Produce a durable research note in the vault, plus a short terminal summary. The note is plain Markdown with YAML frontmatter, so it must stay readable outside Obsidian (any editor or previewer).
 
-The topic is whatever follows `/investigate`.
+Usage: `/investigate [tdd] <topic>`. The topic is whatever follows. A leading `tdd` word selects the TDD shape (see step 4); without it the note uses the free shape.
 
 ## Destination
 
@@ -28,7 +28,9 @@ Restate the question in one line, then pick the area:
 2. Pick the one that fits. Do not create near-duplicates (`Testing` next to `Test Tooling`).
 3. If nothing fits, propose a new Title Case area name.
 
-If the question has two materially different readings, or a new area is needed, ask once, up front, in a single message. Otherwise proceed.
+Pick the shape too: `tdd` if the user said so, otherwise `free`. If they did not say `tdd` but the question is clearly about designing or changing something (it will end in a proposal), add one line to the scoping question: "Is this heading to a TDD? (it changes the note's sections)". Do not ask for plain "what is going on there" questions: default to `free`.
+
+If the question has two materially different readings, a new area is needed, or the shape is unclear, ask once, up front, in a single message. Otherwise proceed.
 
 ### 2. Check for prior work
 
@@ -47,17 +49,24 @@ Delegate fact-gathering to background agents with fresh contexts, so you keep wo
 
 ### 4. Write the note
 
+Frontmatter (both shapes):
+
 ```markdown
 ---
 date: YYYY-MM-DD
 updated: YYYY-MM-DD
 area: <Area folder name>
 type: <design | investigation | inventory | incident | decision | reference>
+format: <free | tdd>
 status: <draft | stable | superseded>
 tags: [<up to 5, lowercase-kebab>]
 sources: [<repo names, doc titles, ticket keys>]
 ---
+```
 
+#### Free shape (`format: free`, the default)
+
+```markdown
 ## Question
 
 One line: what was asked.
@@ -79,9 +88,65 @@ What is still unresolved, and who or what would resolve it.
 `[[wikilinks]]` to sibling notes.
 ```
 
-Property rules:
+#### TDD shape (`format: tdd`)
+
+The user writes the final Technical Design Doc in Notion by hand, from this note. The sections below are named after the company TDD template, so each can be pasted across. Use `type: design`. Sections in this order, omitting any that do not apply (the template itself says not every section is needed):
+
+```markdown
+## Answer
+
+TL;DR in 3–6 lines: the recommended direction, or "not decided yet" and what blocks it. Not part of the TDD: dropped when pasting.
+
+## Glossary
+
+Domain terms and jargon, so a PM or EM can follow the idea.
+
+## Problem / Context / Why
+
+What we are trying to solve, the customer or company pain, the missing capability, and whether an existing system could be extended instead.
+
+## Scope
+
+Who is impacted. What is in scope, and explicitly what is not and what is not a goal.
+
+## Proposal
+
+Assumptions and simplifications. The proposed solution, or the recommended direction. Include only what the investigation produced: systems diagram (C4 style, as a text description or mermaid), data models, DB schemas, API design, flows, code structure, UI changes, non-happy paths, external dependencies. Say which parts are verified and which are assumptions.
+
+## Rejected options
+
+Each alternative considered and why it was not chosen. Investigations usually produce these: record them as you go.
+
+## Costs
+
+Only if relevant: operational, maintenance or vendor costs.
+
+## Risk analysis
+
+Only the subsections that apply: potential pitfalls, reliability (SLOs, external dependencies, scaling dimensions), security/privacy, accessibility, data analytics, multi-region support, backoffice support. Risks fully mitigated belong in the Proposal, not here.
+
+## Evidence
+
+Findings behind the above, organised by theme. Every claim about code carries a `path/file.go:123` citation. Every claim about a document names it. Not part of the TDD.
+
+## Open questions
+
+What is unresolved, and who or what would resolve it. Not part of the TDD.
+
+## Related
+
+`[[wikilinks]]` to sibling notes.
+```
+
+Add `## Estimated effort` (a Part / Effort (days) / Parallelisable? table) and `## Milestones / Roadmap` only when the user asks for them.
+
+Never copy the template's guiding questions into the note: write answers, not prompts.
+
+#### Property rules (both shapes)
+
 - `area` must equal the folder name.
 - `type` and `status` take only the values listed. Do not invent new ones.
+- `format` is `free` unless the TDD shape is used.
 - `tags`: reuse existing tags. Check first with `rg -h "^tags:" ~/Desktop/Vault/Research | sort | uniq -c | sort -rn`. Do not tag the area or type again, and do not add a generic `research` tag, since the folder and properties already say that.
 - `status: draft` while the user is still iterating, `stable` once they accept it, `superseded` when a newer note replaces it.
 
@@ -99,6 +164,7 @@ For every subsequent turn on the same topic:
 6. **Keep the Answer in sync.** A stale conclusion on top of updated findings is worse than no note.
 7. **Promote resolved open questions.** Move the answer into Findings, remove the question, and log it under "What changed and why".
 8. **Moving or renaming a note** (including changing its area): update `area:` and fix inbound `[[wikilinks]]` in the same turn.
+9. **Reshaping in place.** If the user says the investigation is now heading to a TDD (or no longer is), restructure the same file to the other shape, change `format:`, and log it under "What changed and why". Never create a second file for the other shape. In the TDD shape, "Answer" is the TL;DR, "Findings" becomes "Evidence", and the resolved-question rule moves answers into Evidence or the relevant TDD section.
 
 ### Plan mode
 
@@ -115,6 +181,7 @@ Plan mode permits writing only to the plan file, so the vault write will fail. D
 - **Never write secrets, tokens, credentials or customer data into the vault.** It is a plain-text folder on a desktop. Refer to people by role.
 - **No file, no claim of one.** State the full path you wrote.
 - **Stay portable.** Plain Markdown, YAML frontmatter and `[[wikilinks]]` only. No Obsidian-only syntax (dataview queries, embeds) inside notes.
+- **Never create or publish a TDD in Notion, and never write TDD prose outside the vault note.** The TDD shape only prepares the note: the user writes the real Technical Design Doc in Notion by hand. Do not create pages in the Technical Design Board, do not offer to export or sync the note to Notion, and do not produce a second "TDD version" of the note. Reading Notion for research (step 3) is fine.
 
 ## Terminal output
 
