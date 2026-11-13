@@ -25,6 +25,10 @@ Stow runs with `--no-folding` so tools that write into `~/.claude` don't pollute
 
 Herdr rewrites its own config files, so it is not symlinked. Save live changes into the repo with `./sync-herdr.sh`, review the diff, then commit and push. Restore with `rsync -a herdr/.config/ ~/.config/`.
 
+## Claude Code settings
+
+`docs/claude-settings.personal.json` is a snapshot of my `settings.json` with everything employer-specific removed (plugins, marketplaces, work MCP permissions, PR hooks, auto-mode environment). It is not symlinked, because `settings.json` mixes personal and work settings on my main machine. `bootstrap.sh` copies it to `~/.claude/settings.json` only if none exists. It can drift, so regenerate it after changing settings.
+
 ## Herdr PR panel
 
 The `prs` mod gives a popup (`mod.open:prs`, bound to `cmd-alt-p`). The sidebar tab only exists in `my-layout`, so to get it, use the layout too: `herdr-app do layout.switch '{"name":"my-layout"}'`.

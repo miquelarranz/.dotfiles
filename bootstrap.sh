@@ -37,5 +37,13 @@ if [ ! -e "$HOME/.gitconfig.local" ]; then
   echo "NOTE: edit ~/.gitconfig.local and set your git name and email."
 fi
 
+# 5. Claude Code settings: only seed them on a machine that has none (never overwrite)
+if [ ! -e "$HOME/.claude/settings.json" ]; then
+  mkdir -p "$HOME/.claude"
+  cp "$REPO/docs/claude-settings.personal.json" "$HOME/.claude/settings.json"
+  chmod 600 "$HOME/.claude/settings.json"
+  echo "Seeded ~/.claude/settings.json from docs/claude-settings.personal.json"
+fi
+
 echo "Done. Open a new shell. Select the Herdr layout once with:"
 echo "  herdr-app do layout.switch '{\"name\":\"my-layout\"}'"
