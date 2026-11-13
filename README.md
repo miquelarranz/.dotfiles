@@ -23,7 +23,7 @@ git clone git@github.com:miquelarranz/.dotfiles.git ~/dotfiles
 
 Stow runs with `--no-folding` so tools that write into `~/.claude` don't pollute this repo.
 
-Herdr rewrites its own config files, so it is not symlinked. Save live changes into the repo with `./sync-herdr.sh`, review the diff, then commit and push. Restore with `rsync -a herdr/.config/ ~/.config/`.
+Herdr rewrites its own config files, so it is not symlinked. Save live changes into the repo with `./sync-herdr.sh`, review the diff, then commit and push. The script treats any mod, layout or theme that Herdr doesn't ship (it reads `herdr-app/installed.json`) as mine, so new ones are picked up automatically. Entries deleted live are only reported, never removed from the repo. Restore with `rsync -a herdr/.config/ ~/.config/`.
 
 ## Claude Code settings
 

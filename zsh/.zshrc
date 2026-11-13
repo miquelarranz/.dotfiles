@@ -72,7 +72,11 @@ ZSH_THEME="robbyrussell"
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(git)
 
-source $ZSH/oh-my-zsh.sh
+if [ -r "$ZSH/oh-my-zsh.sh" ]; then
+  source "$ZSH/oh-my-zsh.sh"
+else
+  echo "oh-my-zsh not found at $ZSH (run ~/dotfiles/bootstrap.sh)" >&2
+fi
 
 # User configuration
 

@@ -14,6 +14,12 @@ else
   exit 1
 fi
 
+# 1b. oh-my-zsh (.zshrc sources it). Plain clone: no installer script is run and ~/.zshrc is not touched.
+if [ ! -d "$HOME/.oh-my-zsh" ]; then
+  git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
+  echo "Installed oh-my-zsh"
+fi
+
 # 2. Symlinked packages. Dry-run first: if any real file is in the way, stop and say which.
 PKGS=(claude git zsh ccstatusline)
 if ! out=$(stow -n --no-folding "${PKGS[@]}" 2>&1); then
