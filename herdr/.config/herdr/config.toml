@@ -1,0 +1,23 @@
+onboarding = false
+
+[theme]
+name = "catppuccin"
+
+# Cathode Amber (from Rex)
+[theme.custom]
+accent     = "#ffb642"
+panel_bg   = "#140f08"
+surface_dim = "#0e0a05"
+surface0   = "#241a0e"
+surface1   = "#4a3212"
+overlay0   = "#7a6238"
+overlay1   = "#a88a52"
+text       = "#f0c88a"
+subtext0   = "#cfa972"
+mauve      = "#cf8a62"
+green      = "#b8a83f"
+yellow     = "#ffcc70"
+red        = "#e8763f"
+blue       = "#c98d4f"
+teal       = "#d4a852"
+peach      = "#f2925f"
