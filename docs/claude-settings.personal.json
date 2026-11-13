@@ -29,6 +29,7 @@
       "Bash(gh run list*)",
       "Bash(gh run view*)",
       "Bash(ls*)",
+      "Bash(git -C ~/dotfiles push origin main)",
       "Bash(claude plugins list*)",
       "Bash(claude mcp list*)",
       "mcp__github__get_*",
