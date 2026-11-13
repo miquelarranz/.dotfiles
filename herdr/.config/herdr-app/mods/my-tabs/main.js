@@ -1,6 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, focused } from "herdr";
+import { Registry } from "./research-registry.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -12,10 +13,13 @@ function find(node, id) {
 }
 
 export default class Tabs extends View {
-  init() {
+  init(_props, cx) {
     this.pressed = null;
     this.scroll = ScrollHandle.new();
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    // Which sessions have vault notes: the Research button only exists while the focused one does.
+    this.research = new Registry();
+    this.research.watch(cx, (cx) => cx.notify());
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -87,8 +91,11 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "prs"];
+    const hasNotes = this.research.notes(focused()).length > 0;
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "github-prs", ...(hasNotes ? ["research"] : [])];
     this.syncPanel(space, panel, body, enabled);
+    // Focus moved to a session with no notes while Research is showing: close the panel instead of leaving it empty.
+    if (!hasNotes && panel && !panel.hidden && body?.active === "research" && !this.pending) run("layout.hide", { id: "panel" });
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
@@ -108,7 +115,8 @@ export default class Tabs extends View {
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .child(panelButton("prs", "Pull requests", "mods/prs/pr.svg"))
+      .child(panelButton("github-prs", "Pull requests", "mods/github-prs/pr.svg"))
+      .when(hasNotes, el => el.child(panelButton("research", "Research notes", "mods/research-viewer/note.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/my-tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/my-tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/my-tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

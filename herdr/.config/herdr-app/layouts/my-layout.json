@@ -142,10 +142,20 @@
                       }
                     },
                     {
-                      "id": "prs",
+                      "id": "github-prs",
                       "type": "block",
                       "content": {
-                        "mod": "prs"
+                        "mod": "github-prs",
+                        "props": {
+                          "block": "github-prs"
+                        }
+                      }
+                    },
+                    {
+                      "id": "research",
+                      "type": "block",
+                      "content": {
+                        "mod": "research-viewer"
                       }
                     }
                   ],

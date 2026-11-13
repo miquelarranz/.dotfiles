@@ -4,7 +4,6 @@
     "cmd-h": "app.hide",
     "cmd-alt-h": "app.hide_others",
     "cmd-t": "mod.open:newtab-root",
-    "cmd-alt-p": "mod.open:prs",
     "cmd-w": "tab.close",
     "ctrl-tab": "tab.next",
     "ctrl-shift-tab": "tab.prev",
