@@ -22,11 +22,11 @@ function segments(body) {
   const out = [];
   let last = 0, n = 0;
   for (const m of body.matchAll(UML_FENCE)) {
-    if (m.index > last) out.push({ md: body.slice(last, m.index) });
-    out.push({ uml: m[1], n: n++ });
+    if (m.index > last) out.push({ md: body.slice(last, m.index), at: last });
+    out.push({ uml: m[1], n: n++, at: m.index });
     last = m.index + m[0].length;
   }
-  if (last < body.length) out.push({ md: body.slice(last) });
+  if (last < body.length) out.push({ md: body.slice(last), at: last });
   return out;
 }
 
@@ -64,6 +64,84 @@ const relatedTo = (diagram, notePaths) => {
   return notePaths.some((n) => dirOf(n) === folder && (title(n).startsWith(t) || t.startsWith(title(n))));
 };
 
+// What a selection of the rendered text was in the markdown source. The host copies the *rendered* text (no
+// `**`, `#`, `- `, link urls); this maps that text back onto the source and returns the markdown slice, so a copy
+// from the rendered view pastes as markdown, like Notion. Returns null when the text is not found (leave the clipboard).
+function projection(src) {
+  let P = "";
+  const map = [];                       // map[i] = offset in src of P[i]
+  const put = (ch, at) => {
+    if (/\s/.test(ch)) { if (P !== "" && !P.endsWith(" ")) { P += " "; map.push(at); } return; }
+    P += ch; map.push(at);
+  };
+  let off = 0, fence = false;
+  for (const line of src.split(/(?<=\n)/)) {
+    const base = off; off += line.length;
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; put("\n", base); continue; }
+    let i = 0;
+    if (!fence) {
+      const pre = /^(\s*(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+))+/.exec(line);
+      if (pre) i = pre[0].length;
+      if (/^\s*\|?[\s:|-]+\|?\s*$/.test(line) && line.includes("-") && line.includes("|")) { put("\n", base); continue; }
+    }
+    for (; i < line.length; i++) {
+      const c = line[i], rest = line.slice(i);
+      if (!fence) {
+        if (/^(\*\*|__|~~)/.test(rest)) { i++; continue; }
+        if (c === "`" || c === "*") continue;
+        if (c === "|") { put(" ", base + i); continue; }
+        if (c === "[") {
+          const wiki = /^\[\[([^\]|]+\|)?([^\]]+)\]\]/.exec(rest);
+          if (wiki) { const pre2 = wiki[1]?.length ?? 0, t = wiki[2]; for (let k = 0; k < t.length; k++) put(t[k], base + i + 2 + pre2 + k); i += wiki[0].length - 1; continue; }
+          const link = /^\[([^\]]*)\]\(([^)]*)\)/.exec(rest);
+          if (link) { for (let k = 0; k < link[1].length; k++) put(link[1][k], base + i + 1 + k); i += link[0].length - 1; continue; }
+          continue;
+        }
+      }
+      put(c, base + i);
+    }
+    put("\n", base + line.length - 1);
+  }
+  return { P, map };
+}
+
+function selectionToMarkdown(src, selected) {
+  const norm = (t) => t.replace(/\s+/g, " ").trim();
+  const { P, map } = projection(src);
+  const tries = [norm(selected),
+    norm(selected.split("\n").map((l) => l.replace(/^\s*(?:[•◦▪·]\s*|[-*+]\s+|\d+[.)]\s+)/, "")).join("\n"))];
+  for (const sel of tries) {
+    if (!sel) continue;
+    const at = P.indexOf(sel);
+    if (at < 0) continue;
+    let a = map[at], b = map[at + sel.length - 1] + 1;
+    const o = src.lastIndexOf("[[", a);                                // started inside a [[wikilink]]: take all of it
+    if (o >= 0 && o > src.lastIndexOf("]]", a - 1)) a = o;
+    const c = src.lastIndexOf("[[", b - 1);
+    if (c >= 0 && c > src.lastIndexOf("]]", b - 1) && src.indexOf("]]", b) >= 0) b = src.indexOf("]]", b) + 2;
+    while (a > 0 && /[*_~`\[]/.test(src[a - 1])) a--;                  // opening ** _ ` [ right before
+    while (b < src.length && /[*_~`]/.test(src[b])) b++;               // closing marks right after
+    if (src.startsWith("](", b)) { const e = src.indexOf(")", b); if (e > 0) b = e + 1; }
+    const ls = src.lastIndexOf("\n", a - 1) + 1;
+    if (/^\s*(#{1,6}\s+|>\s?|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)*$/.test(src.slice(ls, a))) a = ls;   // keep the line's marker
+    // A selection inside a markdown table: take whole rows, and add the header and separator rows when the
+    // selection starts below them, so it pastes as a table (Notion turns a markdown table into a table block).
+    const isRow = (l) => /^\s*\|/.test(l);
+    const lineAt = (o) => { const st = src.lastIndexOf("\n", o - 1) + 1; let en = src.indexOf("\n", o); if (en < 0) en = src.length; return [st, en]; };
+    let [s0] = lineAt(a), [, e1] = lineAt(Math.max(b - 1, 0));
+    if (isRow(src.slice(s0, lineAt(a)[1])) && isRow(src.slice(lineAt(Math.max(b - 1, 0))[0], e1))) {
+      let top = s0;
+      for (;;) { if (top === 0) break; const [ps] = lineAt(top - 1); if (!isRow(src.slice(ps, top - 1))) break; top = ps; }
+      const out = src.slice(s0, e1);
+      if (top === s0) return out;
+      const [, h1] = lineAt(top), [s2, h2] = lineAt(h1 + 1);
+      return src.slice(top, h1) + "\n" + src.slice(s2, h2) + "\n" + out;
+    }
+    return src.slice(a, b).replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
+  }
+  return null;
+}
+
 export default class ResearchViewer extends View {
   init(_props, cx) {
     this.reg = new Registry();
@@ -79,9 +157,11 @@ export default class ResearchViewer extends View {
     this.picker = false;
     this.diagrams = new Map(); // content hash -> { state: "pending" | "ok" | "error", w, h, error, ready: Promise }
     this.editors = new Map();  // "<note path>#<n>" -> { state: EditorState, saved, live, lastOk, token } for diagrams opened for editing
+    this.lastClip = undefined;  // the clipboard text last seen (ours or anyone's), so each copy is handled once
     this.flash = null;         // { key, msg }: short feedback next to a diagram's buttons
     this.reloadAll(cx);
     cx.timer.every(1000, (cx) => this.follow(cx));
+    cx.timer.every(300, (cx) => this.watchClipboard(cx));
     cx.spawn(async (cx) => {
       for (;;) {
         try { await watchFolder(ROOT()); } catch { await new Promise((r) => cx.timer.after?.(5000, r)); }
@@ -217,6 +297,19 @@ export default class ResearchViewer extends View {
     });
     this.editors.set(key, ed);
     cx.notify();
+  }
+
+  // The host copies the *rendered* text of a selection, and the note view never hears Cmd+C, so watch the
+  // clipboard instead: when new text appears that is a passage of the open note, swap it for the same passage as
+  // markdown (see selectionToMarkdown). Text that is not in the note is left alone.
+  watchClipboard(cx) {
+    const sel = cx.read_from_clipboard();
+    if (sel === this.lastClip) return;
+    const first = this.lastClip === undefined;
+    this.lastClip = sel;
+    if (first || !sel || sel.length < 3 || this.text === null) return;
+    const md = selectionToMarkdown(split(this.text).body, sel);
+    if (md && md !== sel) { this.lastClip = md; cx.write_to_clipboard(md); }
   }
 
   say(key, msg, cx) {
