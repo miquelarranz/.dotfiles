@@ -2,10 +2,33 @@
 // Hooks (~/.claude/hooks) register every vault note a Claude session writes, per session (see registry.js).
 // This mod follows the focused terminal's latest note, re-reads it whenever anything under Research/
 // changes, and has an "all notes" tree of the vault folders. Revealing the panel is done by the hooks.
-import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, TextView } from "gpui-base";
-import { home, exec, readTextFile, watchFolder, focused, theme } from "herdr";
+import { View, div, svg, image } from "gpui-kit";
+import { v_flex, h_flex, TextView, Editor, EditorState } from "gpui-base";
+import { home, exec, readTextFile, writeTextFile, watchFolder, focused, theme } from "herdr";
 import { Registry, REGS } from "./registry.js";
+import { readFile, writeFile, mkdir, exists } from "fs/promises";
+import { createHash } from "crypto";
+
+// PlantUML: ```plantuml fences are rendered to PNG with the local `plantuml` CLI (brew install plantuml; graphviz for
+// non-sequence diagrams), cached by content hash under herdr-app/cache/plantuml. Nothing is sent to a remote server.
+const UML_DIR = () => `${home()}/.config/herdr-app/cache/plantuml`;
+const UML_REL = "cache/plantuml";   // image() paths resolve against the herdr-app root
+const UML_FENCE = /^```(?:plantuml|puml)[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
+const UML_DPI = 144;                // rendered at 1.5x of the 96 dpi default, shown at logical size
+const UML_MAX_W = 640;
+
+// Body -> [{ md } | { uml }] in document order.
+function segments(body) {
+  const out = [];
+  let last = 0, n = 0;
+  for (const m of body.matchAll(UML_FENCE)) {
+    if (m.index > last) out.push({ md: body.slice(last, m.index) });
+    out.push({ uml: m[1], n: n++ });
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) out.push({ md: body.slice(last) });
+  return out;
+}
 
 const ROOT = () => `${home()}/Desktop/Vault/Research`;
 
@@ -29,8 +52,17 @@ function split(text) {
 // Obsidian [[Note|alias]] -> plain text; TextView cannot resolve wikilinks.
 const plain = (s) => s.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
 
-const title = (path) => path.split("/").pop().replace(/\.md$/, "").replace(/^\d{4}-\d{2}-\d{2} /, "");
-const area = (path) => path.split("/").slice(-2, -1)[0];
+const isDiagram = (path) => /\.(puml|plantuml)$/.test(path);
+const title = (path) => path.split("/").pop().replace(/\.(md|puml|plantuml)$/, "").replace(/^\d{4}-\d{2}-\d{2} /, "");
+const area = (path) => path.slice(ROOT().length + 1).split("/")[0];
+// "<note title> - <diagram name>.puml" in <folder>/_files belongs to the notes of <folder> whose title starts with
+// (or is a prefix of) <note title>; the date is ignored since a diagram can be written on a later day than its note.
+const dirOf = (p) => p.split("/").slice(0, -1).join("/");
+const relatedTo = (diagram, notePaths) => {
+  const t = title(diagram).split(" - ")[0];
+  const folder = dirOf(dirOf(diagram));
+  return notePaths.some((n) => dirOf(n) === folder && (title(n).startsWith(t) || t.startsWith(title(n))));
+};
 
 export default class ResearchViewer extends View {
   init(_props, cx) {
@@ -45,6 +77,9 @@ export default class ResearchViewer extends View {
     this.text = null;
     this.error = null;
     this.picker = false;
+    this.diagrams = new Map(); // content hash -> { state: "pending" | "ok" | "error", w, h, error, ready: Promise }
+    this.editors = new Map();  // "<note path>#<n>" -> { state: EditorState, saved, live, lastOk, token } for diagrams opened for editing
+    this.flash = null;         // { key, msg }: short feedback next to a diagram's buttons
     this.reloadAll(cx);
     cx.timer.every(1000, (cx) => this.follow(cx));
     cx.spawn(async (cx) => {
@@ -64,7 +99,7 @@ export default class ResearchViewer extends View {
   async reloadAll(cx) {
     try {
       await this.reg.reload();
-      const files = (await sh('find "$1" -name "*.md" -not -path "*/_files/*" -not -path "*/.*"', ROOT())).split("\n").filter(Boolean);
+      const files = (await sh('find "$1" \\( \\( -name "*.md" -not -path "*/_files/*" \\) -o \\( \\( -name "*.puml" -o -name "*.plantuml" \\) -path "*/_files/*" \\) \\) -not -path "*/.*"', ROOT())).split("\n").filter(Boolean);
       const groups = new Map();
       for (const f of files) {
         const rel = f.slice(ROOT().length + 1), name = rel.includes("/") ? rel.split("/")[0] : "(no folder)";
@@ -115,11 +150,119 @@ export default class ResearchViewer extends View {
     }
     if (path === this.path && !force) return;
     let text = null, error = null;
-    try { text = await readTextFile(path); if (text === null) error = "This note no longer exists"; }
+    try {
+      text = await readTextFile(path);
+      if (text === null) error = "This note no longer exists";
+      else if (isDiagram(path)) text = "```plantuml\n" + text.replace(/\n*$/, "\n") + "```\n";
+    }
     catch (e) { error = String(e); }
     if (path === this.path && text === this.text && error === this.error) return;
     this.path = path; this.text = text; this.error = error;
+    if (text !== null) {   // an editor with no unsaved edits follows the file
+      const blocks = segments(split(text).body).filter((g) => g.uml !== undefined);
+      for (const g of blocks) {
+        const ed = this.editors.get(`${path}#${g.n}`);
+        if (ed && ed.state.value() === ed.saved && g.uml !== ed.saved) { ed.saved = g.uml; ed.live = g.uml; ed.state.set_value(g.uml); }
+      }
+    }
     cx.notify();
+  }
+
+  // Kicks off (once) the render of one diagram; the view repaints when it finishes.
+  diagram(src, cx) {
+    const id = createHash("sha1").update(src).digest("hex").slice(0, 16);
+    let d = this.diagrams.get(id);
+    if (d) return { id, ...d };
+    let done;
+    const ready = new Promise((r) => { done = r; });
+    d = { state: "pending", ready };
+    this.diagrams.set(id, d);
+    cx.spawn(async (cx) => {
+      try {
+        const dir = UML_DIR(), png = `${dir}/${id}.png`;
+        await mkdir(dir, { recursive: true });
+        if (!(await exists(png))) {
+          const body = /@start/.test(src) ? src : `@startuml\n${src}\n@enduml\n`;
+          await writeFile(`${dir}/${id}.puml`, body);
+          const r = await exec("plantuml", ["-tpng", `-Sdpi=${UML_DPI}`, "-nometadata", `${dir}/${id}.puml`], { timeout: 60000 });
+          if (r.code !== 0 || !(await exists(png))) throw new Error((r.stderr || r.stdout || "plantuml failed").trim().slice(0, 300));
+        }
+        const b = await readFile(png);   // PNG IHDR: width and height are big-endian u32 at bytes 16 and 20
+        const u32 = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+        const k = 96 / UML_DPI, w = u32(16) * k, h = u32(20) * k, f = Math.min(1, UML_MAX_W / w);
+        this.diagrams.set(id, { state: "ok", ready, w: Math.round(w * f), h: Math.round(h * f) });
+      } catch (e) {
+        this.diagrams.set(id, { state: "error", ready, error: String(e?.message ?? e) });
+      }
+      done();
+      cx.notify();
+    });
+    return { id, ...d };
+  }
+
+  // Opens or closes the source editor under a diagram. The preview follows what is typed (debounced).
+  toggleEditor(key, src, n, cx) {
+    const cur = this.editors.get(key);
+    if (cur) { cur.state.release(); this.editors.delete(key); cx.notify(); return; }
+    const state = EditorState.new({ value: src, line_numbers: false, soft_wrap: true });
+    const ed = { state, saved: src, live: src, lastOk: null, token: 0, key, n, path: this.path };
+    state.on("change", (_e, cx) => {
+      const tok = ++ed.token;
+      cx.timer.after(350, (acx) => {
+        if (tok !== ed.token) return;
+        ed.live = state.value(); acx.notify();
+        this.save(ed, acx);   // autosave once typing pauses
+      });
+      cx.notify();   // the "unsaved" marker
+    });
+    this.editors.set(key, ed);
+    cx.notify();
+  }
+
+  say(key, msg, cx) {
+    this.flash = { key, msg };
+    cx.notify();
+    cx.timer.after(2000, (acx) => { if (this.flash?.msg === msg) { this.flash = null; acx.notify(); } });
+  }
+
+  // Puts the rendered PNG on the system clipboard as an image (paste it into Notion, Slack, ...).
+  copyImage(key, src, cx) {
+    const { id, ready } = this.diagram(src, cx);
+    cx.spawn(async (acx) => {   // a handler's cx is not valid after an await, the spawned one is
+      await ready;
+      if (this.diagrams.get(id).state !== "ok") return this.say(key, "nothing to copy: fix the diagram first", acx);
+      const r = await exec("osascript", ["-e", "on run argv", "-e", "set the clipboard to (read (POSIX file (item 1 of argv)) as «class PNGf»)", "-e", "end run", `${UML_DIR()}/${id}.png`]);
+      this.say(key, r.code === 0 ? "image copied" : `copy failed: ${r.stderr.trim().slice(0, 80)}`, acx);
+    });
+  }
+
+  // Writes the editor's text back into its file: the n-th ```plantuml block, or the whole .puml file.
+  // Runs on its own after typing pauses; `acx` must be a context that is still valid (a timer's or spawn's).
+  async save(ed, acx) {
+    const value = ed.state.value();
+    if (ed.saving || value === ed.saved) return;
+    ed.saving = true;
+    const before = ed.saved;
+    try {
+      const cur = await readTextFile(ed.path);
+      if (cur === null) throw new Error("the file no longer exists");
+      const code = value.replace(/\n*$/, "\n");
+      let next;
+      if (isDiagram(ed.path)) next = code;
+      else {
+        const m = [...cur.matchAll(UML_FENCE)][ed.n];
+        if (!m) throw new Error("diagram block not found in the file");
+        const at = m.index + m[0].indexOf("\n") + 1;
+        next = cur.slice(0, at) + code + cur.slice(at + m[1].length);
+      }
+      ed.saved = value;   // before the write, so the file watcher's reload sees it as already ours
+      try { await writeTextFile(ed.path, next, cur); } catch (e) { ed.saved = before; throw e; }
+      this.say(ed.key, "saved", acx);
+    } catch (e) { this.say(ed.key, `save failed: ${String(e?.message ?? e).slice(0, 80)}`, acx); }
+    finally {
+      ed.saving = false;
+      if (ed.state.value() !== ed.saved) this.save(ed, acx);   // typed more while writing
+    }
   }
 
   toggle(name, cx) {
@@ -154,7 +297,7 @@ export default class ResearchViewer extends View {
       const date = (p) => (/^(\d{4}-\d{2}-\d{2}) /.exec(p.split("/").pop()) ?? [])[1] ?? "";
       const note = (p, key, indent) => h_flex().id(key).pl(indent).pr(10).py(5).gap(6).items_center()
         .bg(p === this.path ? t.selected : t.surface).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(p, cx))
-        .child(svg("mods/research-viewer/file.svg").size(12).text_color(t.dim))
+        .child(svg(isDiagram(p) ? "mods/research-viewer/note.svg" : "mods/research-viewer/file.svg").size(12).text_color(isDiagram(p) ? t.accent : t.dim))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(p === this.path ? t.foreground : t.muted).child(title(p)))
         .child(div().flex_none().text_size(10).text_color(t.dim).child(date(p)));
       const folder = (name, count, open, key, onClick) => h_flex().id(key).px(10).py(5).gap(6).items_center()
@@ -163,7 +306,10 @@ export default class ResearchViewer extends View {
         .child(svg("mods/research-viewer/folder.svg").size(13).text_color(t.dim))
         .child(div().flex_1().truncate().text_size(12).font_semibold().text_color(t.foreground).child(name))
         .child(div().text_size(10).text_color(t.dim).child(String(count)));
-      const mine = this.sessionNotes().map((n) => n.path);
+      const sessionNotes = this.sessionNotes().map((n) => n.path);
+      const diagrams = this.tree.flatMap((g) => g.notes).filter((p) => isDiagram(p) && relatedTo(p, sessionNotes))
+        .sort((a, b) => b.split("/").pop().localeCompare(a.split("/").pop()));
+      const mine = [...sessionNotes, ...diagrams];
       const rows = [];
       if (mine.length) {
         const o = !this.sessionClosed;
@@ -197,6 +343,28 @@ export default class ResearchViewer extends View {
         h_flex().id("rv-meta").flex_none().px(10).py(5).gap(6).border_b(1).border_color(t.border).children(
           chips.map((c, i) => div().id(`rv-c${i}`).px(6).py(1).rounded(4).bg(t.raised).text_size(10).text_color(t.muted).child(c)))))
       .child(div().id("rv-body").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10)
-        .child(TextView.markdown("rv-md", plain(body)).selectable(true)));
+        .children(segments(body).map((seg, i) => {
+          if (seg.md !== undefined) return TextView.markdown(`rv-md-${i}`, plain(seg.md)).selectable(true);
+          const key = `${this.path}#${seg.n}`, ed = this.editors.get(key);
+          const src = ed ? ed.live : seg.uml;
+          const d = this.diagram(src, cx);
+          if (ed && d.state === "ok") ed.lastOk = d;
+          const shown = d.state === "ok" ? d : ed?.lastOk;   // keep the last good picture while typing
+          const btn = (id, label, color, onClick) => div().id(`rv-b${i}-${id}`).px(6).py(2).rounded(4).text_size(11)
+            .text_color(color).hover((x) => x.bg(t.raised)).on_click(onClick).child(label);
+          const dirty = ed && ed.state.value() !== ed.saved;
+          const bar2 = h_flex().id(`rv-ub${i}`).gap(4).items_center().justify_end()
+            .when(this.flash?.key === key, (el) => el.child(div().text_size(11).text_color(t.accent).child(this.flash.msg)))
+            .when(dirty, (el) => el.child(div().text_size(11).text_color(t.dim).child("saving…")))
+            .child(btn("code", ed ? "hide code" : "code", ed ? t.accent : t.muted, (_e, cx) => this.toggleEditor(key, seg.uml, seg.n, cx)))
+            .child(btn("copy", "copy image", t.muted, (_e, cx) => this.copyImage(key, src, cx)));
+          const lines = ed ? Math.min(Math.max(ed.state.value().split("\n").length, 4), 18) : 0;
+          const box = (msg, color) => div().my(6).p(8).rounded(4).bg(t.raised).text_size(11).text_color(color).child(msg);
+          return v_flex().id(`rv-uml-${i}`).py(4).gap(4).child(bar2)
+            .when(ed !== undefined, (el) => el.child(div().h(lines * 17 + 12).border_1().border_color(t.border).rounded(4).child(Editor.new(ed.state))))
+            .when(!!shown, (el) => el.child(div().py(2).child(image(`${UML_REL}/${shown.id}.png`).w(shown.w).h(shown.h))))
+            .when(d.state === "pending" && !shown, (el) => el.child(box("Rendering diagram…", t.dim)))
+            .when(d.state === "error", (el) => el.child(box(`PlantUML error: ${d.error}`, t.accent)));
+        })));
   }
 }
