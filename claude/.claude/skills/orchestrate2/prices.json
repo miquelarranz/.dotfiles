@@ -1,0 +1,4 @@
+{
+  "_note": "USD per million tokens, per model id (e.g. claude-sonnet-5-5). Fill in from your price list; dollars stay hidden until a model's four rates are set.",
+  "claude-sonnet-5-5": {"input": null, "output": null, "cache_read": null, "cache_write": null}
+}
