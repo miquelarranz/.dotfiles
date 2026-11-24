@@ -1,4 +1,4 @@
-# orchestrate2: how it works
+# orchestrate: how it works
 
 Runs a list of tasks (Jira tickets or anything else) in parallel: one git worktree and one tab per task, a **worker** that implements, a **validator** that checks and opens the draft PR, and a thin **orchestrator** that keeps Jira in sync and talks to you. A script (`orch.py`, no LLM) does all the routing, so the LLMs only run when judgement is needed.
 
@@ -11,7 +11,7 @@ skinparam sequenceMessageAlign center
 title One task, end to end
 
 actor User
-participant "/orchestrate2\n(launcher skill)" as L
+participant "/orchestrate\n(launcher skill)" as L
 participant "orchestrator\n(agent)" as O
 participant "orch.py\n(engine, no LLM)" as E
 participant "worker\n(agent)" as W
@@ -133,12 +133,16 @@ Launches sessions, reads their labels, polls PRs and CI every 60s, wakes workers
 
 | Skill | What it does |
 |---|---|
-| `orchestrate2` | Launcher you type. Opens the orchestrator agent in its own tab. |
+| `orchestrate` | Launcher you type. Opens the orchestrator agent in its own tab. |
 | `run-checks` | Detects Go or TypeScript and runs lint, typecheck, tests and build (prefers `make test-unit`, uses the lockfile's package manager); prints only what failed. |
 | `rebase-and-push` | The safe way to rebase a task branch onto its base or after its parent merged, and push with `--force-with-lease` pinned to what was fetched. |
 | `jira-sync` | Assigns the ticket to you and moves it to In Progress, In Review or Done, never backwards. |
 | `create-pr` | Existing. Opens the draft PR with the Jira link. |
 | `engineering:github-workflow` | Existing. Branch, commit and PR naming. |
+
+## Repos
+
+Start `/orchestrate` from the folder that holds your repos (for example `~/code`). The orchestrator infers each ticket's repos from its title prefix, labels, description and links (and asks only if it cannot tell). A ticket that touches several repos becomes one task per repo, each with its own worktree, tab and PR; the Jira ticket moves to In Review or Done only when all of them do.
 
 ## Task life
 
@@ -147,6 +151,6 @@ Launches sessions, reads their labels, polls PRs and CI every 60s, wakes workers
 ## Files
 
 - Agents: `~/dotfiles/claude/.claude/agents/`
-- Skills: `~/dotfiles/claude/.claude/skills/{orchestrate2,run-checks,rebase-and-push,jira-sync}/`
-- Engine: `.../orchestrate2/scripts/orch.py` (state in the repo's `.git/orchestrate2/`)
-- Cost: `orch.py cost`; dollars appear once `orchestrate2/prices.json` has your rates.
+- Skills: `~/dotfiles/claude/.claude/skills/{orchestrate,run-checks,rebase-and-push,jira-sync}/`
+- Engine: `.../orchestrate/scripts/orch.py` (state in the repo's `.git/orchestrate2/`)
+- Cost: `orch.py cost`; dollars appear once `orchestrate/prices.json` has your rates.

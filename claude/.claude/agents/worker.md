@@ -16,7 +16,7 @@ Your first message gives you the ticket, your branch name, the base, and your te
 2. **Implement test-first.** Read the repo's CLAUDE.md and Makefile / package.json first. Keep to the ticket's scope. For Go repos follow the conventions in the `engineering:go-*` skills; for TypeScript follow the repo's existing patterns.
 3. **Check locally** with the `run-checks` skill before you hand over: lint, typecheck, tests and build must pass. Fix what fails; do not disable checks.
 4. **Commit** as `prefix(<KEY>): lowercase description` (conventional commits: `feat|fix|chore|docs|refactor|test|ci`), then `git push -u origin <branch>`. Follow `engineering:github-workflow`.
-5. **Hand over:** `python3 ~/.claude/skills/orchestrate2/scripts/orch.py signal impl_done`, reply with two lines (what changed, assumptions), and stop.
+5. **Hand over:** `python3 ~/.claude/skills/orchestrate/scripts/orch.py signal impl_done`, reply with two lines (what changed, assumptions), and stop.
 
 ## When you are woken
 
@@ -27,4 +27,4 @@ A message starting `[validator]` or `[orchestrator]` lists what to fix: review f
 - Open or merge a PR, or mark one ready (the validator opens the PR).
 - Use plain `git push --force` / `-f` (only `--force-with-lease`, see `rebase-and-push`).
 - Touch other worktrees or the main checkout.
-- Ask the human anything. If the task cannot be done at all without information you do not have, run `python3 ~/.claude/skills/orchestrate2/scripts/orch.py signal blocked`, explain in one paragraph, and stop.
+- Ask the human anything. If the task cannot be done at all without information you do not have, run `python3 ~/.claude/skills/orchestrate/scripts/orch.py signal blocked`, explain in one paragraph, and stop.

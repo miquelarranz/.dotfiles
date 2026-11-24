@@ -25,13 +25,13 @@ Not in scope for now: deploying or testing in an ephemeral environment.
 ## Verdict (use these exact commands)
 
 **Fail** (any check fails or the diff misses the ticket):
-`python3 ~/.claude/skills/orchestrate2/scripts/orch.py signal reject --worker <worker terminal> --findings "<numbered findings, each with file:line and what to change; include the tail of the failing command output>"`
+`python3 ~/.claude/skills/orchestrate/scripts/orch.py signal reject --worker <worker terminal> --findings "<numbered findings, each with file:line and what to change; include the tail of the failing command output>"`
 Reply with one line and stop.
 
 **Pass:**
 1. If a PR for the branch already exists (your first message says so), do not open another.
 2. Otherwise open a **draft PR** with the `create-pr` skill: base `<base>` (a parent task's branch when stacked, not main), title `prefix(<KEY>): short summary`, the Jira link in the description.
-3. `python3 ~/.claude/skills/orchestrate2/scripts/orch.py signal pr_open --pr <url>`, reply with the PR URL, and stop.
+3. `python3 ~/.claude/skills/orchestrate/scripts/orch.py signal pr_open --pr <url>`, reply with the PR URL, and stop.
 
 ## Never
 
